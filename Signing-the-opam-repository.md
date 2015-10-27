@@ -10,7 +10,10 @@ date: "2015-06-05 15:41 UTC+0900"
 
 The purpose of this proposal is to enable a secure distribution of
 OCaml packages. The package repository does not have to be trusted if
-package developers sign their releases.
+package developers sign their releases.  Each opam file will contain a
+cryptographic signature (in a `signature:` field) of its developer,
+which includes metadata of all involved files (such as a checksum of
+the release tarball).
 
 Like [Python's pip][python-tuf], [Ruby's gems][ruby-tuf] or more recently
 [Haskell's hackage][haskell-tuf], we are going to implement a flavour of The
@@ -114,16 +117,15 @@ to not realize there is anything wrong.
 
 A difficult problem in a cryptosystem is key distribution. In TUF and
 this proposal, a set of root keys are distributed with opam. A
-threshold of these root keys needs to sign (transitively) all keys
-which are used to verify opam repository and its packages.
+threshold of these root keys needs to sign various keys with elevated
+privileges.
 
 ### Root keys
 
-The root of trust is stored in a set of root keys. In the case of the official
-opam OCaml repository, the public keys are to be stored in the opam source,
-allowing it to validate the whole trust chain. The private keys will be held by
-the opam and repository maintainers, and stored password-encrypted, securely
-offline, preferably on unplugged storage.
+An initial set of root keys for the official opam OCaml repository is
+distributed with the opam release.  The private keys will be held by
+the opam and repository maintainers, and stored password-encrypted,
+securely offline, preferably on unplugged storage.
 
 They are used to sign all the top-level keys, using a quorum. The quorum has
 several benefits:
@@ -142,8 +144,9 @@ The initial root keys could be distributed as such:
 - Grégoire Henry, OCamlPro safekeeper
 - Someone in the OCaml team ?
 
-Keys will be set with an expiry date so that one expires each year in turn,
-leaving room for smooth rollover.
+Keys will be set with an expiry date so that one expires each year in
+turn, leaving room for smooth rollover.  An up to date and signed file
+with all root keys is contained in the repository.
 
 For other repositories, there will be three options:
 - no signatures (backwards compatible ?), _e.g._ for local network repositories.
@@ -154,25 +157,18 @@ For other repositories, there will be three options:
 
 ### End-to-end signing
 
-This requires the end-user to be able to validate a signature made by the
-original developer. There are two trust paths for the chain of trust (where
+This requires the end-user to be able to validate a signature made by
+the original developer. The trust path for the chain of trust (where
 "&rarr;" stands for "signs for"):
 
-- (_high_) root keys &rarr;
-  repository maintainer keys &rarr; (signs individually)
-  package delegation + developer key &rarr;
-  package files
-- (_low_) root keys &rarr;
+- root keys &rarr;
   snapshot key &rarr; (signs as part of snapshot)
   package delegation + developer key &rarr;
   package files
 
-It is intended that packages may initially follow the _low_ trust path, adding
-as little burden and delay as possible when adding new packages, and may then be
-promoted to the _high_ path with manual intervention, after verification, from
-repository maintainers. This way, most well-known and widely used packages will
-be provided with higher trust, and the scope of an attack on the low trust path
-would be reduced to new, experimental or little-used packages.
+It must be easy enough for new developers to publish their packages.
+When a developer releases a package, they sign the new release with
+their public key and submit a pull request.
 
 ### Repository signing
 
@@ -193,32 +189,57 @@ valid cryptographic hash of the full repository state, as well as its history)
 
 #### Repository maintainer (RM) keys
 
-Repository maintainers hold the central role in monitoring the repository and
-warranting its security, with or without signing. Their keys (called _targets
-keys_ in the TUF framework) are signed directly by the root keys. As they have a
-high security potential, in order to reduce the consequences of a compromise, we
-will be requiring a quorum for signing sensitive operations
+The OCaml opam repository already needs a fair amount of caretaking:
+packages life in a single namespace, thus names need to be carefully
+claimed (avoiding too general, potentially insulting names,
+duplicates, easy to misinterpret names, ...).  Additionally, since
+ususally no upper version constraints are specified, once a package is
+released, reverse dependencies need adjustments.
 
-These keys are stored password-encrypted on the RM computers.
+The former could be done by the individual package developers, but is
+burdensome for them.  Instead, a group of repository maintainers with
+higher privileges is already established (those with write access to
+ocaml/opam-repository).
+
+If each individual repository maintainer would be able to adjust every
+package, they would be an easy target for an attacker: steal one of
+their keys, and insert malicious code in any (or every) package of the
+opam repository.
+
+Instead, each commit done by a repository maintainer needs a quorum
+(of two other repository maintainers).  Thus, an attacker would need
+to compromise three repository maintainers to succeed.
+
+Repository manager keys are signed by the root keys in the repository,
+the private counterparts are stored password-encrypted on the RM
+computers.
 
 #### Snapshot key
 
 This key is held by the _snapshot bot_ and signed directly by the root keys. It
 is used to guarantee consistency and freshness of repository snapshots, and does
-so by signing a git commit-hash and a time-stamp.
+so by signing a git commit-hash and a timestamp.
 
 It is held online and used by the snapshot bot for automatic signing: it has
 lower security than the RM keys, but also a lower potential: it can not be used
 directly to inject malicious code or metadata in any existing package.
 
-#### Delegate developer keys
+#### Developer keys
 
-These keys are used by the package developers for end-to-end signing. They can
-be generated locally as needed by new packagers (_e.g._ by the `opam-publish`
+These keys are used by the package developers for end-to-end signing. They are
+generated locally as needed by new packagers (_e.g._ by the `opam-publish`
 tool), and should be stored password-encrypted. They can be added to the
-repository through pull-requests, waiting to be signed (i) as part of snapshots
-(which also prevents them to be modified later, but we'll get to it) and (ii)
-directly by RMs.
+repository through pull-requests (self-signed), waiting to be signed (i) as part
+of snapshots (which also prevents them to be modified later, but we'll get to
+it) and (ii) directly by RMs.
+
+Each package directory in opam will include a `delegate` file, which specifies
+the list of developers which maintain this package.  When publishing a new
+package, the developer includes a (signed by themself) `delegate` file where
+at least the developer is listed as maintainer.  At any time, developers can
+decide to add and remove new maintainers by modifying the `delegate` file (TODO:
+should need quorum of |devs| / 2 + 1 (or at least have the possibility to
+specify a quorum in the delegate file)?)
 
 #### Initial bootstrap
 
@@ -235,16 +256,20 @@ In order to build the trust chain, the opam client downloads a `keys/root` key
 file initially and before every update operation. This file is signed by the
 root keys, and can be verified by the client using its built-in keys (or one of
 the ways mentioned above for unofficial repositories). It must be signed by a
-quorum of known root keys, and contains the comprehensive set of root, RM,
+quorum of known root keys, and contains the comprehensive set of root,
 snapshot and initial bootstrap keys: any missing keys are implicitly revoked.
 The new set of root keys is stored by the opam client and used instead of the
 built-in ones on subsequent runs.
 
-Developer keys are stored in files `keys/dev/<id>`, self-signed, possibly RM
-signed (and, obviously, snapshot-signed). The conditions of their verification,
-removal or replacement are included in our validation of metadata update (see
-below).
+Repository maintainer and developer keys are stored in files `keys/dev/<id>`
+(where `<id>` might be a mail address, or the GitHub user account), self-signed,
+possibly also signed by root keys (required for repository managers), and
+signed by the snapshot bot.
 
+Revocation of repository manager and developer keys is done by replacing the
+specific key with `deleted` or a freshly generated public key.  This key
+certainly needs to be signed by a quorum of repository managers (or the old
+key if still available, in the case of renewal).
 
 ## File formats and hierarchy
 
@@ -266,28 +291,37 @@ following these rules:
 - fields containing an empty list, or a singleton list containing an empty
   list, are erased
 
-The `signature:` field is a list with elements in the format of string triplets
-`[ "<keyid>" "<algorithm>" "<signature>" ]`. For example:
+The `signatures:` field is a list with elements in the format of string triplets
+`[ "<id>" "<algorithm>" "<signature>" ]`. For example:
 
 ```
 opam-version: "1.2"
 name: "opam"
-signature: [
-  [ "louis.gesbert@ocamlpro.com" "RSASSA-PSS" "048b6fb4394148267df..." ]
+signatures: [
+  [ "louis.gesbert@ocamlpro.com" "RSA-PSS" "048b6fb4394148267df..." ]
 ]
 ```
 
-Signed tags are git annotated tags, and their contents follow the same rules. In
-this case, the format should contain the field `commit:`, pointing to the
-commit-hash that is being signed and tagged.
+The snapshot bot creates a file `snapshot`, which also uses opam
+syntax.  It contains a timestamp (UTC, RFC3339 format), a commit-hash,
+and a signature field:
+
+```
+last-updated: "2015-06-04T00:00:00Z"
+commit-hash: "5ead357e18059634e167d107859781002c68b206"
+signatures: [ [ "SNAP-foo@bar" "RSA-PSS" "6e817eb01a..." ] ]
+```
+
+This `snapshot` file is commit to the opam repository: a client expects the
+last commit be the snapshot file, done by a snapshot bot!
 
 ### File hierarchy
 
 The repository format is changed by the addition of:
 - a directory `keys/` at the root
-- delegation files `packages/<pkgname>/delegate` and
-  `compilers/<patchname>.delegate`
-- signed checksum files at `packages/<pkgname>/<pkgname>.<version>/signature`
+- delegation files `packages/<pkgname>/delegate`
+- signatures in the opam file, including checksum of external resources
+  (patches, tarballs)
 
 Here is an example:
 
@@ -295,48 +329,45 @@ Here is an example:
 repository root /
 |--packages/
 |  |--pkgname/
-|  |  |--delegation                    - signed by developer, repo maintainer
+|  |  |--delegation            - signed by developer1, developer2
 |  |  |--pkgname.version1/
 |  |  |  |--opam
-|  |  |  |--descr
-|  |  |  |--url
-|  |  |  `--signature                  - signed by developer1
-|  |  `--pkgname.version2/ ...
+|  |  |  `--signature          - signed by developer2
+|  |  `--pkgname.version2/
+|  |     |--files/aa.patch
+|  |     |--opam
+|  |     `--signature          - signed by developer1 (incl. aa.patch checksum)
 |  `--pkgname2/ ...
-|--compilers/
-|  |--version/
-|  |  |--version+patch/
-|  |  |  |--version+patch.comp
-|  |  |  |--version+patch.descr
-|  |  |  `--version+patch.signature
-|  |  `--version+patch2/ ...
-|  |--patch.delegate
-|  |--patch2.delegate
-|  `--version2/ ...
 `--keys/
    |--root
    `--dev/
-      |--developer1-email              - signed by developer1,
-      `--developer2-email ...            and repo maint. once verified
+      |--developer1            - signed by developer1
+      `--developer2            - signed by developer2
 ```
 
-Keys are provided in different files as string triplets
-`[ [ "keyid" "algo" "key" ] ]`. `keyid` must not conflict with any
-previously-defined keys, and `algo` may be "rsa" and keys encoded in PEM format,
-with further options available later.
-
-For example, the `keys/root` file will have the format:
+The `keys/root` file will have the format:
 ```
-date: "2015-06-04T13:53:00Z"
-root-keys: [ [ "keyid" "{expire-date}" "algo" "key" ] ]
-snapshot-keys: [ [ "keyid" "algo" "key" ] ]
-repository-maintainer-keys: [ [ "keyid" "algo" "key" ] ]
+last-updated: "2015-06-04T13:53:00Z"
+root-keys: [ [ "keyid" "{expiry-date}" "key" ] ]
+snapshot-keys: [ [ "keyid" "{expiry-date}" "key" ] ]
+initial-bootstrap-keys: [ [ "keyid" "{used-until}" "key" ] ]
+signatures: [ ... ]
 ```
 
 This file is signed by current _and past_ root keys -- to allow clients to
 update. The `date:` field provides further protection against rollback attacks:
 no clients may accept a file with a date older than what they currently have.
-Date is in the ISO 8601 standard with 0 UTC offset, as suggested in TUF.
+Date is as described in RFC3339 in UTC time.  The bootstrap key was only used
+initially, thus signatures after `used-until` are invalid.  The `keyid` of root
+keys start with "ROOT-", snapshot with "SNAP-", initial bootstrap with
+"BOOTSTRAP-" (to avoid collisions with developer key ids) (TODO: find special
+character disallowed by GitHub to use here).
+
+Repository maintainer and developer keys are provided in individual files, named
+as `<id>`, as string tuples `[ [ "key" "{role}" ] ]` (or `[ [ "deleted" ] ]`),
+where `key` is a PEM formatted key, and `role` either "developer" or "repository
+maintainer".  These files are at least self-signed, potentially by repository
+maintainers or root keys.
 
 #### Delegation files
 
@@ -344,28 +375,21 @@ Date is in the ISO 8601 standard with 0 UTC offset, as suggested in TUF.
 `pkgname`. The file contains version constraints associated with keyids, _e.g._:
 
 ```
+last-updated: "2005-04-02T12:12:12Z"
 name: pkgname
 delegates: [
   "thomas@gazagnaire.org"
   "louis.gesbert@ocamlpro.com" {>= "1.0"}
 ]
+signatures: [ ... ]
 ```
 The file is signed:
 - by the original developer submitting it
-- or by a developer previously having delegation for all versions, for changes
-- or directly by repository maintainers, validating the delegation, and
-  increasing the level of trust
-
-Every key a developer delegates trust to must also be signed by the developer.
-
-`compilers/patch.delegate` files follow a similar format (we are considering
-changing the hierarchy of compilers to match that of packages, to make things
-simpler).
+- by a developer previously having delegation for all versions, for changes
+- by a quorum of repository maintainers
 
 The `delegates:` field may be empty: in this case, no packages by this name are
-allowed on the repository. This may be useful to mark deletion of obsolete
-packages, and make sure a new, different package doesn't take the same name by
-mistake or malice.
+allowed on the repository. This is used to mark deletion of a package.
 
 #### Package signature files
 
@@ -380,12 +404,11 @@ kind, and a field `archive:` containing the same details for the upstream
 archive. For example:
 
 ```
+last-updated: "2003-01-01T23:24:59Z"
 name: pkgname
 version: pkgversion
 package-files: [
   "opam" {901 [ sha1 "7f9bc3cc8a43bd8047656975bec20b578eb7eed9" md5 "1234567890" ]}
-  "descr" {448 [ sha1 "8541f98524d22eeb6dd669f1e9cddef302182333" ]}
-  "url" {112 [ sha1 "0a07dd3208baf4726015d656bc916e00cd33732c" ]}
   "files/ocaml.4.02.patch" {17243 [ sha1 "b3995688b9fd6f5ebd0dc4669fc113c631340fde" ]}
 ]
 archive: [ 908460 [ sha1 "ec5642fd2faf3ebd9a28f9de85acce0743e53cc2" ] ]
@@ -402,26 +425,23 @@ RM key compromise from allowing arbitrary changes to every package. The quorum
 is not initially required to sign a delegation, but is, consistently, required
 for any change to an existing, signed delegation.
 
-Compiler signature files `<version>+<patch>.signature` are similar, with fields
-`compiler-files` containing checksums for `<version>+<patch>.*`, the same field
-`archive:` and an additional optional field `patches:`, containing the sizes and
-hashes of upstream patches used by this compiler.
-
 If the delegation or signature can't be validated, the package or compiler is
 ignored. If any file doesn't correspond to its size or hashes, it is ignored as
 well. Any file not mentioned in the signature file is ignored.
+
 
 ## Snapshots and linearity
 
 ### Main snapshot role
 
-The snapshot key automatically adds a `signed` annotated tag to the top of the
-served branch of the repository. This tag contains the commit-hash and the
-current timestamp, effectively ensuring freshness and consistency of the full
-repository. This protects against mix-and-match, rollback and freeze attacks.
+The snapshot key automatically adds a `snapshot` file to the top of the
+git repository. This protects against mix-and-match, rollback and freeze attacks.
 
-The `signed` annotated tag is deleted and recreated by the snapshot bot, after
-checking the validity of the update, periodically and after each change.
+The `snapshot` file is rolled back (reverted) and recreated by the snapshot bot,
+after checking the validity of the update, periodically and after each change.
+
+Each client locally reverts its repository to HEAD~1, and bases incoming changes
+on top of that repository.
 
 ### Linearity
 
@@ -456,33 +476,22 @@ these conditions to clients.
 
 The linearity invariants are:
  1. no key, delegation, or package version (signed files) may be removed
- 2. a new key is signed by itself, and optionally by a RM
- 3. a new delegation is signed by the delegate key, optionally by a RM. Signing
-    keys must also sign the delegate keys
+ 2. a new key is signed by itself
+ 3. a new delegation is signed by the delegate key
  4. a new package or package version is signed by a valid key holding a valid
     delegation for this package version
  5. keys can only be modified with signature from the previous key or a quorum
     of RM keys
  6. delegations can only be modified with signature by a quorum of RMs, or
-    possibly by a former delegate key (without version constraints) in case
-    there was previously no RM signature
+    possibly by former delegate keys (without version constraints)
  7. any package modification is signed by an appropriate delegate key, or by a
     quorum of RM keys
-
-It is sometimes needed to do operations, like key revocation, that are not
-allowed by the above rules. These are enabled by the following additional rules,
-that require the commit including the changes to be signed by a quorum of
-repository maintainers using an annotated tag:
-
- 1. package or package version removal
- 2. removal (revocation) of a developer key
- 3. removal of a package delegation (it's in general preferable to leave an
-    empty delegation)
+ 8. modifications of any file with a `last-updated` field needs to increase
 
 Changes to the `keys/root` file, which may add, modify or revoke keys for root,
 RMs and snapshot keys is verified in the normal way, but needs to be handled for
 checking linearity since it decides the validity of RM signatures. Since this
-file may be needed before we can check the `signed` tag, it has its own
+file may be needed before we can check the `snapshot` file, it has its own
 timestamp to prevent rollback attacks.
 
 In case the linearity invariant check fail:
@@ -492,12 +501,64 @@ In case the linearity invariant check fail:
   on (the repository has likely been compromised at that point)
 - on the repository (checks by the snapshot bot), update is stalled and all
   repository maintainers immediately warned. To recover, the broken commits
-  (between the last `signed` tag and master) need to be amended.
+  (between the last valid `signature` and master) need to be amended.
 
+## Keys and trust, revisited
 
+We have the circle of root keys, which need to delegate to snapshot keys, and
+also an initial set of repository maintainers.  Their keys are useless for
+other things.  The snapshot key is only valid for the `snapshot` file.
 
+Once an initial set of repository maintainers has been chosen and signed by the
+root keys, this set can themselves add and remove any members (again, using a
+quorum). There is no need to annoy root keys with the burden to establish new
+repository maintainers (and especially, revoking them should be fast and easy).
 
+Developers are still in full control (modulo housekeeping of RM) of their
+packages: they can release new versions, publish new packages, add and remove
+delegations (thus involve other developers).  If a developer looses their key,
+a quorum of repository maintainers can establish a new key in the repository.
 
+Keys and packages are never really deleted, but rather marked for deletion.
+This serves two purposes: a package name or identifier cannot be reused (and
+thus potentially mixed with an old repository to claim ownership of packages),
+and also there is some file to add signatures to (instead of using git
+metadata).
+
+To prevent rollback attacks, we need to sprinkle some `last-updated` fields.
+Otherwise there is no way for the snapshot bot to check whether some
+modification was just a replay of an earlier modified file.
+
+It could be easier if we would integrate more with git, but git signing and
+annotated tags, etc. are not version controlled, and thus freeze attacks are
+easily possible.  Also, git commit hashes are only known after a commit, thus
+they cannot be easily used for signing (unless we take two commits as a unit).
+
+Uniqueness of key identifiers has to be preserved.  Therefore we put each in
+a separate file which filename is the identifier.  All keys used for package
+signing (developer and RM) populate a single repository (TODO: this might break
+on case-insensitive file systems if GitHub accounts are case sensitive).  Keys
+are connected to their GitHub user name for now, later we might want to think
+of eMail connections etc.  Maybe we should name each key file as
+`<fingerprint>`, and include the identifier explicitly into the file?
+(Preserving uniqueness will need to read all the files, but that should be ok.)
+
+In the end, there is need for some social control, as established now: name
+squatting can be prevented by RM taking care.  RM tools need to be mature enough
+so that 'needs quorum' and 'is this change' is easily understandable, and
+RM know what they sign.
+
+If we trust the snapshot enough, we could skip linearity checks on the client
+(e.g. `--skip-linearity`), which would be useful for low power devices. Maybe
+introduction of a set of snapshot bots (and then a quorum again) is sensible?
+(But this would need a slightly different structure, maybe dumping to
+`snapshot/<id>` instead of a `snapshot` file would be enough, though.)
+
+Attackers have to be evaluated at various levels: those stealing developer keys,
+RM keys, root keys, snapshot keys; and then attacking either the entire
+repository, or a single targeted user (or the snapshot bot).  When a developer
+key is stolen, the snapshot key is also needed to target a single user for
+a malicious patch.
 
 ## Work and changes involved
 
@@ -522,10 +583,8 @@ management of updated keys in `~/.opam/repo/name`.
 Handle the new formats for checksums and non-repackaged archives.
 
 Allow a per-repository security threshold (_e.g._ allow all, allow only signed
-packages, allow only packages signed by a verified key, allow only packages
-signed by their verified developer). It should be easy but explicit to add a
-local network, unsigned repository. Backends other than git won't be signed
-anyway (local, rsync...).
+packages). It should be easy but explicit to add a local network, unsigned
+repository. Backends other than git won't be signed anyway (local, rsync...).
 
 ### opam-publish
 
@@ -550,8 +609,7 @@ management. Special tooling will also be needed by RMs.
   * list and sign changed packages directly
   * list and sign waiting delegations to developer keys
   * validate signatures, print reports
-  * sign tags, including adding a signature to an existing tag to meet the
-    quorum
+  * adding a signature to an existing file to meet the quorum
   * list quorums waiting to be met on a given branch
 - generate signed snapshots (same as the snapshot bot, for testing)
 
@@ -559,14 +617,14 @@ management. Special tooling will also be needed by RMs.
 
 If we don't want to have this processed on the publicly visible host serving the
 repository, we'll need a mechanism to fetch the repository, and submit the
-signed tag back to the repository server.
+branch with snapshot file back to the repository server.
 
 Doing this through mirage unikernels would be cool, and provide good isolation.
 We could imagine running this process regularly:
 
 - fetch changes from the repository's git (GitHub)
 - check for consistency (linearity)
-- generate and sign the `signed` tag
+- generate and sign the `snapshot` file
 - push tag back to the release repository
 
 ### Travis
@@ -582,6 +640,7 @@ leaving it stuck (as well as any repository updates) until the bad commits are
 rewritten.
 
 ## Some more detailed scenarios
+
 
 ### `opam init` and `update` scenario
 
