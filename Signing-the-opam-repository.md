@@ -560,6 +560,10 @@ repository, or a single targeted user (or the snapshot bot).  When a developer
 key is stolen, the snapshot key is also needed to target a single user for
 a malicious patch.
 
+After reiterating, hannes thinks that names (package and key ids) need to be
+signed by RM as well, otherwise on the link between repository and snapshot
+bot harm can be done (squatting names).
+
 ## Work and changes involved
 
 ### General
@@ -644,8 +648,8 @@ rewritten.
 
 ### `opam init` and `update` scenario
 
-On `init`, the client would clone the repository and get to the `signed` tag,
-get and check the associated `keys/root` file, and validate the `signed` tag
+On `init`, the client would clone the repository and get to the `snapshot` file,
+get and check the associated `keys/root` file, and validate the `snapshot` file
 according to the new keyset. If all goes well, the new set of root, RM and
 snapshot keys is registered.
 
@@ -658,7 +662,7 @@ the file removed if it doesn't match both.
 
 On subsequent updates, the process is the same except that a fetch operation is
 done on the existing clone, and that the repository is forwarded to the new
-`signed` tag only if linearity checks passed (and the update is aborted
+`snapshot` only if linearity checks passed (and the update is aborted
 otherwise).
 
 ### `opam-publish` scenario
@@ -686,12 +690,12 @@ We claim that the above measures give protection against:
   in the current setting, still need GitHub write access to the repository, or
   to bypass GitHub's security).
 
-- Rollback attacks: git updates must follow the currently known `signed` tag. if
-  the snapshot bot detects deletions of packages, it refuses to sign, and
+- Rollback attacks: git updates must follow the currently known `snapshot` file.
+  If the snapshot bot detects deletions of packages, it refuses to sign, and
   clients double-check this. The `keys/root` file contains a timestamp.
 
-- Indefinite freeze attacks: the snapshot bot periodically signs the `signed`
-  tag with a timestamp, if a client receives a tag older than the expected age
+- Indefinite freeze attacks: the snapshot bot periodically signs the `snapshot`
+  file with a timestamp, if a client receives a tag older than the expected age
   it will notice.
 
 - Endless data attacks: we rely on the git protocol and this does not defend
@@ -729,6 +733,9 @@ anymore and the signing bot will not sign.
 Certainly, the access can be frozen, thus the signing bot does not receive
 updates, but continues to sign the old repository version.
 
+Unless RM have to sign for names, MITM on this link can be used to squat
+package names and key ids.
+
 ### Snapshot key
 
 If the snapshot key is compromised, an attacker is able to:
@@ -752,12 +759,12 @@ the linearity check is reproduces even from the clients:
 
 The repository would then just have to be reset to before the attack, which git
 makes as easy as it can get, and the holders of the root keys would sign a new
-`/auth/root`, revoking the compromised snapshot key and introducing a new one.
+`keys/root`, revoking the compromised snapshot key and introducing a new one.
 
 In the time before the signing bot can be put back online with the new snapshot
 key -- _i.e._ the breach has been found and fixed -- a developer could manually
-sign time-stamped tags before they expire (_e.g._ once a day) so as not to hold
-back updates.
+sign timestamped `snapshot` files before they expire (_e.g._ once a day) so as
+not to hold back updates.
 
 ### Repository Maintainer keys
 
