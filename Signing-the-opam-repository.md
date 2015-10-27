@@ -564,6 +564,13 @@ After reiterating, hannes thinks that names (package and key ids) need to be
 signed by RM as well, otherwise on the link between repository and snapshot
 bot harm can be done (squatting names).
 
+Another line of thought is to start with a bootstrap key: this is ultimately
+trusted for everything, and defers this responsibility to RM.  Maybe we should
+not distinguish between RM and root keys; after all, a separation which does not
+exist at the moment and there is not really demand for more structure.  The
+benefit would be further simplification (by having actually only two key types,
+plus snapshot bots).
+
 ## Work and changes involved
 
 ### General
