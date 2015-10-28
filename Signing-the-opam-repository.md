@@ -387,12 +387,13 @@ well. Any file not mentioned in the signature file is ignored.
 
 ### Main snapshot role
 
-The snapshot bit periodically adds a annotated `signed` tag to the git
-repository, and pushes this to the main repository. This protects against
-mix-and-match, rollback and freeze attacks.
+The snapshot bot periodically adds a `signed` annotated tag to the top of the
+served branch of the repository. This tag contains the commit-hash and the
+current timestamp, effectively ensuring freshness and consistency of the full
+repository. This protects against mix-and-match, rollback and freeze attacks.
 
-The snapshot bot periodically fetches the development repository, validates each
-commit individually, and upon success commits a freshly created `signed` tag.
+The `signed` annotated tag is deleted and recreated by the snapshot bot
+periodically, after checking the validity of each individual commit.
 
 Each client when updating fetches the remote repository, validates the `signed`
 tag, and each commit individually, and updates its local repository.
@@ -571,14 +572,14 @@ management. Special tooling will also be needed by RMs.
 
 If we don't want to have this processed on the publicly visible host serving the
 repository, we'll need a mechanism to fetch the repository, and submit the
-annotated `signed` tag back to the repository server.
+`signed` tag back to the repository server.
 
 Doing this through mirage unikernels would be cool, and provide good isolation.
 We could imagine running this process regularly:
 
 - fetch changes from the repository's git (GitHub)
 - check for consistency (linearity)
-- generate and sign the annotated `signed` tag
+- generate and sign the `signed` tag
 - push tag back to the release repository
 
 ### Travis
@@ -595,11 +596,12 @@ rewritten.
 
 ## Some more detailed scenarios
 
-
 ### `opam init` and `update` scenario
 
-On `init`, the client would clone the repository, validate the `signed` tag
-according to the current keyset. If all goes well, the repository is used.
+On `init`, the client clones the repository and get and validate the `signed`
+tag according to the current keyset (which must be rooted in the preserved
+keys (either shipped with opam itself or on disk from a previous run). If all
+goes well, the repository is used.
 
 Then all files' signatures are checked following the trust chains, and copied to
 the internal repository mirror opam will be using (`~/.opam/repo/<name>`). When
