@@ -115,54 +115,22 @@ to not realize there is anything wrong.
 
 ## Trust
 
-A difficult problem in a cryptosystem is key distribution. In TUF and
-this proposal, a set of root keys are distributed with opam. A
-threshold of these root keys needs to sign various keys with elevated
-privileges.
-
-### Root keys
-
-An initial set of root keys for the official opam OCaml repository is
-distributed with the opam release.  The private keys will be held by
-the opam and repository maintainers, and stored password-encrypted,
-securely offline, preferably on unplugged storage.
-
-They are used to sign all the top-level keys, using a quorum. The quorum has
-several benefits:
-
-- the compromise of a number of root keys less than the quorum is harmless
-- it allows to safely revoke and replace a key, even if it was lost
-
-The added cost is more maintenance burden, but this remains small since these
-keys are not often used (only when keys are going to expire, were compromised or
-in the event new top-level keys need to be added).
-
-The initial root keys could be distributed as such:
-- Louis Gesbert, opam maintainer, OCamlPro
-- Anil Madhavapeddy, main repository maintainer, OCaml Labs
-- Thomas Gazagnaire, main repository maintainer, OCaml Labs
-- Grégoire Henry, OCamlPro safekeeper
-- Someone in the OCaml team ?
-
-Keys will be set with an expiry date so that one expires each year in
-turn, leaving room for smooth rollover.  An up to date and signed file
-with all root keys is contained in the repository.
-
-For other repositories, there will be three options:
-- no signatures (backwards compatible ?), _e.g._ for local network repositories.
-  This should be allowed, but with proper warnings.
-- trust on first use: get the root keys on first access, let the user confirm
-  their fingerprints, then fully trust them.
-- let the user manually supply the root keys.
+A difficult problem in a cryptosystem is key distribution.  In this proposal, a
+package developer signs their new release, submits a new package, delegates
+responsibility for a package, renew their key, ...
+Some operations need interaction with a group of janitors, the repository
+maintainers, responsible for keeping the repository in a working state
+(by adjusting version constraints, helping with key revocation, preventing
+malicious individuals from squatting all package names, ...).
 
 ### End-to-end signing
 
-This requires the end-user to be able to validate a signature made by
-the original developer. The trust path for the chain of trust (where
+The end-user must be able to validate a signature made by the original
+developer. The trust path for the chain of trust (where
 "&rarr;" stands for "signs for"):
 
-- root keys &rarr;
-  snapshot key &rarr; (signs as part of snapshot)
+- repository maintainer keys &rarr;
+  snapshot key &rarr;
   package delegation + developer key &rarr;
   package files
 
@@ -170,61 +138,41 @@ It must be easy enough for new developers to publish their packages.
 When a developer releases a package, they sign the new release with
 their public key and submit a pull request.
 
-### Repository signing
+### Repository maintainer (RM) keys
 
-This provides consistent, up-to-date snapshots of the repository, and protects
-against a whole different class of attacks than end-to-end signing (_e.g._
-rollbacks, mix-and-match, freeze, etc.)
+An initial set of repository maintainer keys for the official opam OCaml
+repository is distributed with each opam release.  The private keys will be
+stored password-encrypted, securely offline.
 
-This is done automatically by a snapshot bot (might run on the repository
-server), using the _snapshot key_, which is signed directly by the root keys,
-hence the chain of trust:
+The responsibility of the RM is to keep the repository in a working state:
+introducing version constraints of reverse dependencies upon new releases,
+taking care of package names (and key identifiers), adding new members to the
+group of RMs, removing members of the group, revoking compromise keys, ...
 
-- root keys &rarr;
-  snapshot key &rarr;
-  commit-hash
+If a single repository maintainer key would be valid for modifying every
+package, they would be too easy targets for compromises.  Instead, each
+operation needs a quorum of at least three repository maintainers.  The quorum
+has several benefits:
 
-Where "commit-hash" is the head of the repository's git repository (and thus a
-valid cryptographic hash of the full repository state, as well as its history)
+- the compromise of a number of RM keys less than the quorum is harmless
+- it allows to safely revoke and replace a key, even if it was lost
 
-#### Repository maintainer (RM) keys
+The initial RM keys could be distributed as such:
+- Louis Gesbert, opam maintainer, OCamlPro
+- Anil Madhavapeddy, main repository maintainer, OCaml Labs
+- Thomas Gazagnaire, main repository maintainer, OCaml Labs
+- Grégoire Henry, OCamlPro safekeeper
+- Someone in the OCaml team ?
+- Other maintainers of the ocaml/opam-repository GitHub repository
 
-The OCaml opam repository already needs a fair amount of caretaking:
-packages life in a single namespace, thus names need to be carefully
-claimed (avoiding too general, potentially insulting names,
-duplicates, easy to misinterpret names, ...).  Additionally, since
-ususally no upper version constraints are specified, once a package is
-released, reverse dependencies need adjustments.
+For other repositories, there will be three options:
+- no signatures (backwards compatible ?), _e.g._ for local network repositories.
+  This should be allowed, but with proper warnings.
+- trust on first use: get the RM keys on first access, let the user confirm
+  their fingerprints, then fully trust them.
+- let the user manually supply the RM keys.
 
-The former could be done by the individual package developers, but is
-burdensome for them.  Instead, a group of repository maintainers with
-higher privileges is already established (those with write access to
-ocaml/opam-repository).
-
-If each individual repository maintainer would be able to adjust every
-package, they would be an easy target for an attacker: steal one of
-their keys, and insert malicious code in any (or every) package of the
-opam repository.
-
-Instead, each commit done by a repository maintainer needs a quorum
-(of two other repository maintainers).  Thus, an attacker would need
-to compromise three repository maintainers to succeed.
-
-Repository manager keys are signed by the root keys in the repository,
-the private counterparts are stored password-encrypted on the RM
-computers.
-
-#### Snapshot key
-
-This key is held by the _snapshot bot_ and signed directly by the root keys. It
-is used to guarantee consistency and freshness of repository snapshots, and does
-so by signing a git commit-hash and a timestamp.
-
-It is held online and used by the snapshot bot for automatic signing: it has
-lower security than the RM keys, but also a lower potential: it can not be used
-directly to inject malicious code or metadata in any existing package.
-
-#### Developer keys
+### Developer keys
 
 These keys are used by the package developers for end-to-end signing. They are
 generated locally as needed by new packagers (_e.g._ by the `opam-publish`
@@ -237,39 +185,51 @@ Each package directory in opam will include a `delegate` file, which specifies
 the list of developers which maintain this package.  When publishing a new
 package, the developer includes a (signed by themself) `delegate` file where
 at least the developer is listed as maintainer.  At any time, developers can
-decide to add and remove new maintainers by modifying the `delegate` file (TODO:
-should need quorum of |devs| / 2 + 1 (or at least have the possibility to
-specify a quorum in the delegate file)?)
+decide to add and remove new maintainers by modifying the `delegate` file,
+optionally specifying a quorum of developers to do modifications in this file.
 
-#### Initial bootstrap
+### Repository signing
 
-We'll need to start somewhere, and the current repository isn't signed. An
-additional key, _initial-bootstrap_, will be used for guaranteeing integrity of
-existing, but yet unverified packages.
+This provides consistent, up-to-date snapshots of the repository, and protects
+against a whole different class of attacks than end-to-end signing (_e.g._
+rollbacks, mix-and-match, freeze, etc.)
 
-This is a one-go key, signed by the root keys, and that will then be destroyed.
-It is allowed to sign for packages without delegation.
+This is done automatically by a snapshot bot (might run on the repository
+server), using the _snapshot key_, which is signed by some RM keys,
+hence the chain of trust:
+
+- repository maintainer keys &rarr;
+  snapshot key &rarr;
+  commit-hash
+
+Where "commit-hash" is the head of the repository's git repository (and thus a
+valid cryptographic hash of the full repository state, as well as its history)
+
+The snapshot bot is an online automated service which periodically updates its
+repository checkout, checks patches and linearity constraints, and signs the
+repository with a timestamp.  The snapshot key has lower security than the RM
+keys, but also a lower potential: it can not be used to sign packages, and thus
+inserting malicious code or metadata is not possible.
 
 ### Trust chain and revocation
 
-In order to build the trust chain, the opam client downloads a `keys/root` key
-file initially and before every update operation. This file is signed by the
-root keys, and can be verified by the client using its built-in keys (or one of
-the ways mentioned above for unofficial repositories). It must be signed by a
-quorum of known root keys, and contains the comprehensive set of root,
-snapshot and initial bootstrap keys: any missing keys are implicitly revoked.
-The new set of root keys is stored by the opam client and used instead of the
-built-in ones on subsequent runs.
+Opam is distributed with some RM keys, and the opam client has a local
+repository (in some commit C).  Local state, which include the view of valid
+RM keys, might be preserved in `.opam` somewhere.  To update the repository, all
+commits between C and HEAD are fetched, the most recent is expected to be done
+by the snapshot bot.  First, the validity of the snapshot key is verified by
+checking its signatures (which might involve reading and validating more
+repository manager keys).
 
-Repository maintainer and developer keys are stored in files `keys/dev/<id>`
-(where `<id>` might be a mail address, or the GitHub user account), self-signed,
-possibly also signed by root keys (required for repository managers), and
-signed by the snapshot bot.
+Keys are stored in files `keys/dev/<id>` (where `<id>` might be a mail address,
+or the GitHub user account), self-signed, also signed by RM keys, and signed by
+the snapshot bot.
 
-Revocation of repository manager and developer keys is done by replacing the
-specific key with `deleted` or a freshly generated public key.  This key
-certainly needs to be signed by a quorum of repository managers (or the old
-key if still available, in the case of renewal).
+Revocation of keys is done by replacing the specific key with `deleted` or a
+freshly generated public key.  This key certainly needs to be signed with a
+quorum of repository managers, or in the renewal case, with the old key.
+
+~~hannes fell asleep here
 
 ## File formats and hierarchy
 
@@ -692,10 +652,10 @@ otherwise).
 
 We claim that the above measures give protection against:
 
-- Arbitrary packages: if an existing package is not signed, it is not installed
-  (or even visible) to the user. Anybody can submit new unclaimed packages (but,
-  in the current setting, still need GitHub write access to the repository, or
-  to bypass GitHub's security).
+- Arbitrary packages: an existing package cannot be updated unless it carries
+  a valid signature of the original developer.  Compromising the developer key
+  is sufficient to get this privilege (and once the snapshot bot signed the
+  new malicious release, users will be able to install it).
 
 - Rollback attacks: git updates must follow the currently known `snapshot` file.
   If the snapshot bot detects deletions of packages, it refuses to sign, and
