@@ -214,20 +214,22 @@ inserting malicious code or metadata is not possible.
 ### Trust chain and revocation
 
 Opam is distributed with some RM keys, and the opam client has a local
-repository (in some commit C).  Local state, which includes some valid RM keys,
-is preserved in `.opam`.  To update the repository, all commits between C and
-HEAD are fetched, the most recent is expected to be done by the snapshot bot.
-First, the validity of the snapshot key is verified by checking its signatures
-(which might involve reading and validating more repository manager keys).
+repository (in some commit `C`).  Local state, which includes valid RM keys,
+is preserved in `.opam/keystate`.  To update the repository, all commits between
+`C` and `HEAD` are fetched, the most recent is expected to be done by the
+snapshot bot. First, the validity of the snapshot key is verified by validating
+its signatures (which might involve reading and validating of repository
+manager keys, but they have to be rooted in the locally preserved RM keys or
+those distributed with opam).
 
 Public keys are stored in the repository, each in a file `keys/<id>` (where
 `<id>` might be a mail address, or the GitHub user account), self-signed, also
-signed by at least one RM key, and signed by the snapshot bot.
+signed by at least one RM key, and implicitly signed by the snapshot bot.
 
-Revocation of keys is done by replacing the specific key with the string
-`deleted`.  This needs to be signed by a quorum of RMs.  For key renewal, the
-old key is replaced with the new, and signed by both old and new, in addition
-to a quorum of RMs.
+Revocation of keys is done by replacing the specific key with the empty string.
+This needs to be signed by a quorum of RMs.  For key renewal, the old key is
+replaced with the new, and signed by both old and new, in addition to a quorum
+of RMs.
 
 To prevent name squatting (and since merging a GitHub pull request does not
 include any signature, thus could be faked by a MITM between GitHub and snapshot
@@ -267,8 +269,8 @@ signatures: [
 ]
 ```
 
-The snapshot bot creates a file `snapshot`, which also uses opam syntax.  It
-contains a timestamp (UTC, RFC3339 format), a commit-hash, and a `signatures`
+The snapshot bot creates an annotated tag `signed`, which also uses opam syntax.
+It contains a timestamp (UTC, RFC3339 format), a commit-hash, and a `signatures`
 field:
 
 ```
@@ -277,8 +279,8 @@ commit-hash: "5ead357e18059634e167d107859781002c68b206"
 signatures: [ [ "SNAP-foo@bar" "RSA-PSS" "6e817eb01a..." ] ]
 ```
 
-This `snapshot` file is committed to the opam repository: a client expects the
-last commit be done by a snapshot bot, containing the snapshot file!
+This `signed` tag is pushed to the opam repository, which is fetched by the
+client.
 
 ### File hierarchy
 
@@ -385,21 +387,15 @@ well. Any file not mentioned in the signature file is ignored.
 
 ### Main snapshot role
 
-The snapshot key automatically adds a `snapshot` file to the git repository, and
-commits this. This protects against mix-and-match, rollback and freeze attacks.
+The snapshot bit periodically adds a annotated `signed` tag to the git
+repository, and pushes this to the main repository. This protects against
+mix-and-match, rollback and freeze attacks.
 
 The snapshot bot periodically fetches the development repository, validates each
-commit individually, and upon success commits a freshly created `snapshot` file.
-This commit is then pushed back to the repository which is fetched by clients.
+commit individually, and upon success commits a freshly created `signed` tag.
 
-Each client when updating first resets locally the latest commit, fetches the
-remote repository, validates the snapshot file, and each commit individually,
-and updates its local repository.
-
-(TODO: or re-revert to annotated tag here again? unsure about this -- annotated
-tag has the neat property that developers can use their client repo to submit
-PRs (in the case of a `snapshot` commit, this is hard to handle in git, and
-screws up tools))
+Each client when updating fetches the remote repository, validates the `signed`
+tag, and each commit individually, and updates its local repository.
 
 ### Linearity
 
@@ -477,12 +473,12 @@ and do a clean checkout.
 
 ## Keys and trust, revisited
 
-There are two kinds of keys, those of the snapshot bot, signed by RMs, and those
-legible to sign packages they have a delegation for (or a quorum of RMs).  An
-initial set of RMs is distributed with opam itself, upon revocation or renewal
-a new vanity release of opam is done; but since only a quorum is needed,
-revocation of a small subset of the distributed keys does not result in opam
-refusing any repository.
+There are two (and a half) kinds of keys, those of the snapshot bot, signed by
+RMs, and those legible to sign packages they have a delegation for (or a quorum
+of RMs).  An initial set of RMs is distributed with opam itself, upon revocation
+or renewal a new vanity release of opam is done; but since only a quorum is
+needed, revocation of a small subset of the distributed keys does not result in
+opam refusing any repository.
 
 Developers are still in full control (modulo housekeeping of RM) of their
 packages: they can release new versions, publish new packages, add and remove
@@ -514,10 +510,9 @@ introduction of a set of snapshot bots (and then a quorum again) is sensible?
 `snapshot/<id>` instead of a `snapshot` file would be enough, though.)
 
 Attackers have to be evaluated at various levels: those stealing developer keys,
-RM keys, root keys, snapshot keys; and then attacking either the entire
-repository, or a single targeted user (or the snapshot bot).  When a developer
-key is stolen, the snapshot key is also needed to target a single user for
-a malicious patch.
+RM keys, snapshot keys; and then attacking either the entire repository, or a
+single targeted user (or the snapshot bot).  When a developer key is stolen, the
+snapshot key is also needed to target a single user for a malicious patch.
 
 ## Work and changes involved
 
@@ -570,20 +565,20 @@ management. Special tooling will also be needed by RMs.
   * validate signatures, print reports
   * adding a signature to an existing file to meet the quorum
   * list quorums waiting to be met on a given branch
-- generate signed snapshots (same as the snapshot bot, for testing)
+- generate `signed` tags (same as the snapshot bot, for testing)
 
 ### Signing bots
 
 If we don't want to have this processed on the publicly visible host serving the
 repository, we'll need a mechanism to fetch the repository, and submit the
-branch with snapshot file back to the repository server.
+annotated `signed` tag back to the repository server.
 
 Doing this through mirage unikernels would be cool, and provide good isolation.
 We could imagine running this process regularly:
 
 - fetch changes from the repository's git (GitHub)
 - check for consistency (linearity)
-- generate and sign the `snapshot` file
+- generate and sign the annotated `signed` tag
 - push tag back to the release repository
 
 ### Travis
@@ -603,7 +598,7 @@ rewritten.
 
 ### `opam init` and `update` scenario
 
-On `init`, the client would clone the repository, validate the `snapshot` file
+On `init`, the client would clone the repository, validate the `signed` tag
 according to the current keyset. If all goes well, the repository is used.
 
 Then all files' signatures are checked following the trust chains, and copied to
@@ -615,7 +610,7 @@ the file removed if it doesn't match both.
 
 On subsequent updates, the process is the same except that a fetch operation is
 done on the existing clone, and that the repository is forwarded to the new
-`snapshot` only if linearity checks passed (and the update is aborted
+`signed` tag only if linearity checks passed (and the update is aborted
 otherwise).
 
 ### `opam-publish` scenario
@@ -643,12 +638,12 @@ We claim that the above measures give protection against:
   is sufficient to get this privilege (and once the snapshot bot signed the
   new malicious release, users will be able to install it).
 
-- Rollback attacks: git updates must follow the currently known `snapshot` file.
+- Rollback attacks: git updates must follow the currently known `signed` tag.
   If the snapshot bot detects deletions of packages, it refuses to sign, and
   clients double-check this.  All signed files contain a `last-updated` field.
 
-- Indefinite freeze attacks: the snapshot bot periodically signs the `snapshot`
-  file with a timestamp, if a client receives a tag older than the expected age
+- Indefinite freeze attacks: the snapshot bot periodically signs the `signed`
+  tag with a timestamp, if a client receives a tag older than the expected age
   it will notice.
 
 - Endless data attacks: we rely on the git protocol and this does not defend
@@ -684,7 +679,7 @@ updates, but continues to sign the old repository version.
 
 If the snapshot key is compromised, an attacker is able to:
 
-- Freeze, by forever re-signing the `snapshot` file with an updated timestamp.
+- Freeze, by forever re-signing the `signed` tag with an updated timestamp.
 
 Most importantly, the attacker won't be able to tamper with existing packages.
 This hugely reduces the potential of an attack, even with a compromised
@@ -705,7 +700,7 @@ introducing a new one.
 
 In the time before the signing bot can be put back online with the new snapshot
 key -- _i.e._ the breach has been found and fixed -- RMs could manually sign
-timestamped `snapshot` files before they expire (_e.g._ once a day) so as not to
+timestamped `signed` tag before they expire (_e.g._ once a day) so as not to
 hold back updates.
 
 ### Repository Maintainer keys
