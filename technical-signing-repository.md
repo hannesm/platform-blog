@@ -15,7 +15,7 @@ In this document, I argue that this repository can only be modified by
 
 The repository has some structure: it contains a `keys/` directory with a flat
 structure of keys.  Other subdirectories may either contain a `delegate` file
-and a set of subdirectories, or a `signatures` file,
+and a set of subdirectories, or a `checksums` file,
 
 Each key is named after its key identifier, and self-signed.
 
@@ -31,9 +31,9 @@ repository root /
 |   |   |   |-- c
 |   |   |   |-- dir/
 |   |   |   |   `-- d
-|   |   |   `-- signatures
+|   |   |   `-- checksums
 |   |   `-- a.3/
-|   |       `-- signatures
+|   |       `-- checksums
 |   `-- b/
 |       `-- delegate
 `-- keys/
@@ -75,17 +75,17 @@ A signature is encoded as a triple:
 ### Delegation
 
 The purpose of a `delegate` file is to contain a list of key identifiers which
-have permission to modify this directory.  A `delegate` file consists of a
-quadruple: `(name, counter, key-ids, signatures)`:
+have permission to modify the contained directory.  A `delegate` file consists
+of a quadruple: `(name, counter, key-ids, signatures)`:
 - `name` is the directory name
 - `counter` is a monotonic counter
 - `key-ids` is a set of key identifiers
 - `signatures` defined below
 
-### Signatures file
+### Checksums file
 
-A `signatures` file provides checksums of all files in the current directory and
-subdirectories thereof.  It is a quadruple
+A `checksums` file consists of checksums of (recursively!) all files in the
+directory.  It is a quadruple
 `(counter, name, files, signatures)`:
 
 - `counter` is a monotonic counter
@@ -113,7 +113,7 @@ transitively rooted in the `TK`.
 A patch `P` consists a set of modifications to files.  The patch is split into
 components: a potential modification of a single file in `keys/` is processed
 first, followed by individual modifications to `delegate` files, followed by
-modifications grouped by subdirectory including a `signatures` file.
+modifications grouped by subdirectory including a `checksums` file.
 
 Components (c_n) are processed in order, leading to
 `S` -(c_1)&rarr; `S_1` -(c_2)&rarr; `S_2` ... -(c_(n-1))&rarr; `S_(n-1)` -(c_n)&rarr; `S_n`
@@ -149,11 +149,11 @@ Each component is verified in the following way, depending on its content:
 - other modifications in some directory `d`:
    - find `delegate` file between `d` and `/` in `S` (using algorithm above)
    - `K` is the set of all key identifiers of this `delegate` file, else empty
-   - the `counter` field in the `signatures` file increased
+   - the `counter` field in the `checksums` file increased
    - apply the modifications, and verify that the checksums of all files are
-     correct.  Only exactly those files listed in `signatures` have to exist
-     (plus the `signatures` file itself)!
-   - verify the signatures of the `signatures` file: either one key of `K` or a
+     correct.  Only exactly those files listed in `checksums` have to exist
+     (plus the `checksums` file itself)!
+   - verify the signatures of the `checksums` file: either one key of `K` or a
      quorum rooted in `TK`
 
 [PKCS1]: https://tools.ietf.org/html/rfc3447
