@@ -185,8 +185,7 @@ Each package directory in opam will include a `delegate` file, which specifies
 the list of developers which maintain this package.  When publishing a new
 package, the developer includes a (signed by themself) `delegate` file where
 at least the developer is listed as maintainer.  At any time, developers can
-decide to add and remove new maintainers by modifying the `delegate` file,
-optionally specifying a quorum of developers to do modifications in this file.
+decide to add and remove new maintainers by modifying the `delegate` file.
 
 ### Repository signing
 
@@ -223,19 +222,16 @@ manager keys, but they have to be rooted in the locally preserved RM keys or
 those distributed with opam).
 
 Public keys are stored in the repository, each in a file `keys/<id>` (where
-`<id>` might be a mail address, or the GitHub user account), self-signed, also
-signed by at least one RM key, and implicitly signed by the snapshot bot.
+`<id>` might be a mail address, or the GitHub user account), self-signed, maybe
+signed by RMs, and implicitly signed by the snapshot bot.
 
 Revocation of keys is done by replacing the specific key with the empty string.
 This needs to be signed by a quorum of RMs.  For key renewal, the old key is
 replaced with the new, and signed by both old and new, in addition to a quorum
-of RMs.
+of RMs (if RM key, otherwise just self-signed by the developer).
 
-To prevent name squatting (and since merging a GitHub pull request does not
-include any signature, thus could be faked by a MITM between GitHub and snapshot
-bot), the delegation of a newly released package, and each public key, needs to
-be signed by one RM (thus, getting a RM key allows name squatting, but this can
-be rolled back once detected).
+Name squatting of package names and key identifiers is possible, in the case
+the MITM is between GitHub and the snapshot bot.
 
 ## File formats and hierarchy
 
@@ -263,7 +259,7 @@ For example:
 
 ```
 opam-version: "1.2"
-name: "opam"
+name: "opam.1.3"
 signatures: [
   [ "louis.gesbert@ocamlpro.com" "RSA-PSS" "048b6fb4394148267df..." ]
 ]
@@ -295,14 +291,14 @@ Here is an example:
 repository root /
 |--packages/
 |  |--pkgname/
-|  |  |--delegation            - signed by developer1, developer2
+|  |  |--delegate              - signed by developer1, developer2
 |  |  |--pkgname.version1/
 |  |  |  |--opam
-|  |  |  `--signature          - signed by developer2
+|  |  |  `--signatures         - signed by developer2
 |  |  `--pkgname.version2/
 |  |     |--files/aa.patch
 |  |     |--opam
-|  |     `--signature          - signed by developer1 (incl. aa.patch checksum)
+|  |     `--signatures         - signed by developer1 (incl. aa.patch checksum)
 |  `--pkgname2/ ...
 `--keys/
    |--developer1               - signed by developer1
@@ -322,26 +318,23 @@ Role is the claimed role, a set of signatures is required to actually act as
 this role (always self-signed; a single RM for developer, a quorum for other
 roles).  An empty `key` field denotes deletion.
 
-#### Delegation files
+#### Delegation
 
-`/packages/pkgname/delegation` delegates ownership on versions of package
+`/packages/pkgname/delegate` delegates ownership on versions of package
 `pkgname`. The file contains version constraints associated with keyids, _e.g._:
 
 ```
 last-updated: "2005-04-02T12:12:12Z"
 name: "{pkgname}"
-delegates: [
+delegation: [
   "thomas@gazagnaire.org"
   "louis.gesbert@ocamlpro.com" {>= "1.0"}
 ]
-quorum: "{n}"
 signatures: [ ... ]
 ```
 
-The file is always signed by the original developer submitting it (plus `n - 1`
-other key ids of the `delegates` set) and the RM who pushed it to the
-repository; or a quorum of 3 RMs (for hot-fixes or if developers managed to lock
-themselves out).  The `quorum` field is optional, and defaults to 1.
+The file is always signed by some developer in the delegation list; or a quorum
+of RMs (for hot-fixes or if developers managed to lock themselves out).
 
 The `delegates:` field may be empty: in this case, no packages by this name are
 allowed on the repository. This is used to mark deletion of a package.
@@ -360,8 +353,7 @@ archive. For example:
 
 ```
 last-updated: "2003-01-01T23:24:59Z"
-name: pkgname
-version: pkgversion
+name: pkgname.version
 package-files: [
   "opam" {901 [ sha1 "7f9bc3cc8a43bd8047656975bec20b578eb7eed9" md5 "1234567890" ]}
   "files/ocaml.4.02.patch" {17243 [ sha1 "b3995688b9fd6f5ebd0dc4669fc113c631340fde" ]}
@@ -371,7 +363,7 @@ signatures: [ ... ]
 ```
 
 This file is signed either:
-- by a (quorum of) delegate keys from the `../../delegation`
+- by a delegate key from the `../../delegate`
 - by a quorum of repository maintainers
 
 The latter is needed to hot-fix packages on the repository: repository
@@ -381,7 +373,6 @@ compromise from allowing arbitrary changes to every package.
 If the delegation or signature can't be validated, the package or compiler is
 ignored. If any file doesn't correspond to its size or hashes, it is ignored as
 well. Any file not mentioned in the signature file is ignored.
-
 
 ## Snapshots and linearity
 
@@ -438,9 +429,9 @@ The linearity invariants are:
     delegation for this package version
  5. keys can only be modified with signature from the previous key or a quorum
     of RM keys
- 6. delegations can only be modified with signature by (a quorum of) delegate
-    keys, or a quorum of RMs
- 7. any package modification is signed by an appropriate delegate key, or by a
+ 6. delegations can only be modified with signature by delegate keys, or a
+    quorum of RM keys
+ 7. any package modification is signed by an appropriate delegate key, or a
     quorum of RM keys
  8. modifications of any file with a `last-updated` field needs to increase
 
@@ -478,8 +469,8 @@ There are two (and a half) kinds of keys, those of the snapshot bot, signed by
 RMs, and those legible to sign packages they have a delegation for (or a quorum
 of RMs).  An initial set of RMs is distributed with opam itself, upon revocation
 or renewal a new vanity release of opam is done; but since only a quorum is
-needed, revocation of a small subset of the distributed keys does not result in
-opam refusing any repository.
+needed, revocation of a small subset of the distributed RM keys does not result
+in opam refusing any repository.
 
 Developers are still in full control (modulo housekeeping of RM) of their
 packages: they can release new versions, publish new packages, add and remove
@@ -725,13 +716,12 @@ malicious commit.
 ### Developer key
 
 Add an arbitrary new release to the repository (or modify an existing).  If the
-developer setup a quorum for their package, multiple developer keys need to be
-compromised to do such a malicious update.
+attacker sits between GitHub and snapshot bot, they can inject new packages,
+or modify old releases, which will _not_ be noticed by the snapshot bot.
 
-If the RM merging does not catch this, compromised packages will hit the client.
-This is unlikely to happen for widely used packages where the developers are
-well known (and RMs will be surprised on updates including a new checksum,
-adding a new patch file, or suddenly a new release).
+For attackers submitting a modification or new release via the GitHub PR
+mechanism, the RM also observing the development of the package is likely to
+notice and check out-of-band with the developers.
 
 ### Compromise of several keys
 
