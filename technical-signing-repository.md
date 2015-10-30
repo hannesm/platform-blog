@@ -55,7 +55,7 @@ A public key is thus defined by a quintuple:
 - `keyid`: a unique identifier (ASCII string), the filename must be the same
   value.  Uniqueness (case-insensitive) between all keys must be preserved.
 - `role`: a string claiming a role
-- `key`: as described above
+- `key`: as described above, or the empty string if the keyid is revoked
 - `signatures`: a list of signatures (defined below), at least a self signature!
 
 ### Signature
