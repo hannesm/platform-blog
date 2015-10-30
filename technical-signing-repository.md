@@ -104,10 +104,10 @@ Each modification to the repository, a so-called `patch`, is verified
 individually:  Given a repository in state `S`, and a patch `P`, the repository
 evolves into state `S'`, which is `S` with `P` applied.
 
-There are two different cases where a file modification is valid: either a key
-responsible for this file has signed it, or a quorum of keys signed the file.
-This quorum of keys have to be signed by a quorum of keys, which are
-transitively rooted in the `TK`.
+There are two different cases where a file modification is valid:
+- a key responsible for this file signed it OR
+- a quorum of keys signed the file. Each key participating in the quorum has to
+  be signed by a quorum of keys itself, ultimately transitively rooted in `TK`.
 
 A patch `P` consists a set of modifications to files.  The patch is split into
 components: a potential modification of a single file in `keys/` is processed
