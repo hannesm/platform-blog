@@ -49,9 +49,9 @@ document we will assume RSA keys, but it should not matter which public key
 algorithm is used.
 
 A public key is thus defined by a quintuple:
-`(last-updated, keyid, role, key, signatures)`
+`(counter, keyid, role, key, signatures)`
 
-- `last-updated`: [RFC3339][] timestamp, UTC, precision seconds
+- `counter`: monotonic counter
 - `keyid`: a unique identifier (ASCII string), the filename must be the same
   value.  Uniqueness (case-insensitive) between all keys must be preserved.
 - `role`: a string claiming a role
@@ -60,8 +60,8 @@ A public key is thus defined by a quintuple:
 
 ### Signature
 
-A signature is encoded as a quadruple:
-`(keyid, signature-algorithm, timestamp, value)`
+A signature is encoded as a triple:
+`(keyid, signature-algorithm, value)`
 
 - `keyid` is a string
 - `signature-algorithm` is a string (described in [PKCS1][]):
@@ -70,16 +70,15 @@ A signature is encoded as a quadruple:
      by Bellare and Rogaway)
    - "RSA-PKCS" (using RSASSA-PKCS1-v1_5: old signature scheme with appendix as
      first standardized in version 1.5 of PKCS #1).
-- `timestamp` is a [RFC3339][] timestamp, UTC, precision is seconds
 - `value` is the base64 encoded value.
 
 ### Delegation
 
 The purpose of a `delegate` file is to contain a list of key identifiers which
 have permission to modify this directory.  A `delegate` file consists of a
-quadruple: `(name, last-updated, key-ids, signatures)`:
+quadruple: `(name, counter, key-ids, signatures)`:
 - `name` is the directory name
-- `last-updated` is a [RFC3339][] timestamp in UTC, precision in seconds
+- `counter` is a monotonic counter
 - `key-ids` is a set of key identifiers
 - `signatures` defined below
 
@@ -87,9 +86,9 @@ quadruple: `(name, last-updated, key-ids, signatures)`:
 
 A `signatures` file provides checksums of all files in the current directory and
 subdirectories thereof.  It is a quadruple
-`(last-updated, name, files, signatures)`:
+`(counter, name, files, signatures)`:
 
-- `last-updated` a [RFC3339][] timestamp, UTC timezone, precision in seconds
+- `counter` is a monotonic counter
 - `name` the directory name
 - `files` is a list of triples `(filename, byte-size, sha256-digest)`
 - `signatures` a list of signatures
@@ -137,20 +136,20 @@ Each component is verified in the following way, depending on its content:
    - if it adds a new file: contains a valid key, which is unique, and the file
      has a valid self-signature
    - if it modifies an existing key:
-     - verify that `last-updated` increased
+     - verify that `counter` increased
      - either the public key of the keyid in `S` signs this file, or a quorum
        rooted in `TK`.
    - any deletion of a key is invalid
 - each `delegate` file:
    - any deletion is invalid
-   - the `last-updated` field increased
+   - the `counter` field increased
    - load key identifiers from `S` into `K`, and use them to verify the
      signatures of `delegate`: either signed by a key in `K`, or by a quorum of
      keys rooted in `TK`
 - other modifications in some directory `d`:
    - find `delegate` file between `d` and `/` in `S` (using algorithm above)
    - `K` is the set of all key identifiers of this `delegate` file, else empty
-   - the `last-updated` field in `signatures` increased
+   - the `counter` field in the `signatures` file increased
    - apply the modifications, and verify that the checksums of all files are
      correct.  Only exactly those files listed in `signatures` have to exist
      (plus the `signatures` file itself)!
@@ -158,4 +157,3 @@ Each component is verified in the following way, depending on its content:
      quorum rooted in `TK`
 
 [PKCS1]: https://tools.ietf.org/html/rfc3447
-[RFC3339]: https://tools.ietf.org/html/rfc3339
