@@ -32,7 +32,7 @@ repository root /
 |   |   |   |-- dir/
 |   |   |   |   `-- d
 |   |   |   `-- checksums
-|   |   `-- a.3/
+|   |   `-- a.2/
 |   |       `-- checksums
 |   `-- b/
 |       `-- delegate
