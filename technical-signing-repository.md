@@ -117,7 +117,8 @@ first, followed by individual modifications to `delegate` files, followed by
 modifications grouped by subdirectory including a `signatures` file.
 
 Components (c_n) are processed in order, leading to
-`S` -c_1-> `S_1` -c_2-> `S_2` ... -c_(n-1)-> `S_(n-1)` -c_n-> `S'`
+`S` -(c_1)&rarr; `S_1` -(c_2)&rarr; `S_2` ... -(c_(n-1))&rarr; `S_(n-1)` -(c_n)&rarr; `S_n`
+where `S'` mentioned earlier is `S_n`.
 
 Finding the closest file `f` between `x` and `y`, where `y/.../x`:
 ```
