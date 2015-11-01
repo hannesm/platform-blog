@@ -52,8 +52,9 @@ A public key is thus defined by a quadruple:
 `(counter, keyid, key, signatures)`
 
 - `counter`: monotonic counter
-- `keyid`: a unique identifier (ASCII string), the filename must be the same
-  value.  Uniqueness (case-insensitive) between all keys must be preserved.
+- `keyid`: a unique identifier (printable ASCII string, no control characters),
+  the filename must be the same value.  Uniqueness (case-insensitive) between
+  all keys must be preserved.
 - `key`: as described above, or the empty string if the keyid is revoked
 - `signatures`: a list of signatures (defined below), at least a self signature!
 
@@ -69,7 +70,7 @@ A signature is encoded as a triple:
      by Bellare and Rogaway)
    - "RSA-PKCS" (using RSASSA-PKCS1-v1_5: old signature scheme with appendix as
      first standardized in version 1.5 of PKCS #1).
-- `value` is the base64 encoded value.
+- `value` is the base64 encoded signature.
 
 ### Delegation
 
