@@ -141,9 +141,7 @@ which modifies a key is allowed in a patch, and is verified first.  (There might
 be subsequent hunks which change signatures of other keys, though.)  Afterwards,
 delegate modifications are verified, and last data modifications.
 
-Hunks (*hn*) are processed in order, leading to
-`S` -(*h1*)&rarr; `S1` -(*h2*)&rarr; `S2` ... -(*h_(n-1)*)&rarr; `S(n-1)`
--(*hn*)&rarr; `Sn` where `S'` (mentioned above) is `Sn`.
+Hunks (h<sub>n</sub>) are processed in order, leading to `S` &rarr;<sub>h<sub>1</sub></sub> `S`<sub>`1`</sub> &rarr;<sub>h<sub>2</sub></sub> `S`<sub>2</sub> ... &rarr;<sub>h<sub>n-1</sub></sub> `S`<sub>n-1</sub> &rarr;<sub>h<sub>n</sub></sub> `S`<sub>n</sub> where `S'` (mentioned above) is `S`<sub>n</sub>.
 
 There are two different cases where a file modification is valid (`mod_valid`):
 - _either_ a key responsible for this file signed it
@@ -178,7 +176,7 @@ Each hunk is verified in the following way (using repository state `S` and
    - all files in the directory and its subdirectories occur in `files`, and
      have the correct length and checksum.
 
-## Concrete Instantiation
+## Concrete instantiation (what is in Code)
 
 - `signature-algorithm` can be one of the following, as described in [PKCS1][]:
    - "RSA-PSS" (using RSASSA-PSS: improved probabilistic signature scheme with
@@ -186,8 +184,11 @@ Each hunk is verified in the following way (using repository state `S` and
      by Bellare and Rogaway)
    - "RSA-PKCS" (using RSASSA-PKCS1-v1_5: old signature scheme with appendix as
      first standardized in version 1.5 of PKCS #1).
-- each key has additionally a `role`: `RepositoryMaintainer`, `Developer` or `SnapshotBot`.
-  Validity is checked when patch is applied, a quorum is needed.
+
+- instead of doing the transitive quorum check to split keys into repository
+  maintainers and developers, we introduced a `role` field in each key, which is
+  a string.  If it is anything apart from `Developer`, a quorum of RMs need to
+  have signed this key.
 
 [PKCS1]: https://tools.ietf.org/html/rfc3447
 
