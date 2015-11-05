@@ -209,3 +209,9 @@ signed by RMs).
 Python uses `claimed` vs `unclaimed` names instead, which we might want to
 adapt (by requiring quorum of signatures on `delegate` file for a `claimed`
 name).
+
+And we have a git-like repository in mind, rather than a directory.  Thus
+several people should be able to change subparts (which they own) of the system
+in a concurrent way, without merge conflicts.  This is the reason why we
+distribute metadata (keys, delegate, checksums) in a per-identity, per-package
+wat, instead of having a single global file.
